@@ -379,17 +379,19 @@ function drawTrend(data) {
     ctx.fillText(fmtAxis(v), pad.l - 6, y);
   }
 
-  // 堆叠柱状图
+  // 堆叠柱状图（累加求和，各账户自下而上堆叠）
   for (let i = 0; i < n; i++) {
     const x = pad.l + slot * i + (slot - barW) / 2;
-    let top = py(0);
+    let cum = 0;
     for (const s of series) {
       const v = s.values[i] || 0;
       if (v <= 0) continue;
-      const bottom = py(v);
+      const prev = cum;
+      cum += v;
+      const yTop = py(cum);
+      const yBottom = py(prev);
       ctx.fillStyle = s.color;
-      ctx.fillRect(x, bottom, barW, top - bottom);
-      top = bottom;
+      ctx.fillRect(x, yTop, barW, yBottom - yTop);
     }
   }
 
