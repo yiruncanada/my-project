@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>资产管家 · 极简版</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>💰 资产管家</h1>
+  <button id="toggle-hide" class="icon-btn" title="一键隐数">👁️</button>
+</header>
+
+<main>
+  <!-- 总资产卡片 -->
+  <section class="card summary-card">
+    <div class="summary-label">当前总资产</div>
+    <div class="summary-amount amount">¥ --</div>
+    <div class="summary-updated">最近更新：--</div>
+  </section>
+
+  <!-- 账户选择 + 列表 -->
+  <section class="card">
+    <div class="section-head">
+      <h2>资产账户</h2>
+      <button id="btn-new-account" class="btn btn-sm">＋ 新增账户</button>
+    </div>
+    <select id="account-select" class="select">
+      <option value="">请先新增账户</option>
+    </select>
+    <ul id="account-list" class="account-list"></ul>
+  </section>
+
+  <!-- 上传识别区 -->
+  <section class="card">
+    <div class="section-head"><h2>上传截图识别</h2></div>
+    <div id="drop-zone" class="drop-zone">
+      <p>📷 拖拽 / 粘贴 / 点击选择截图</p>
+      <p class="hint">识别账户：<span id="drop-account" class="accent">未选择</span></p>
+      <input type="file" id="file-input" accept="image/*" hidden>
+    </div>
+  </section>
+
+  <!-- 趋势图 -->
+  <section class="card">
+    <div class="section-head"><h2>资产走势</h2></div>
+    <canvas id="trend-canvas" height="220"></canvas>
+    <p id="trend-empty" class="hint">暂无记录</p>
+  </section>
+</main>
+
+<!-- 识别确认弹窗 -->
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <h3>确认识别金额</h3>
+    <p class="hint">保存到账户：<span id="modal-account" class="accent"></span></p>
+    <input type="number" id="modal-amount" step="0.01" min="0" placeholder="输入金额">
+    <div id="modal-candidates" class="candidates"></div>
+    <p id="modal-error" class="error"></p>
+    <div class="modal-actions">
+      <button id="btn-cancel" class="btn">取消</button>
+      <button id="btn-confirm" class="btn btn-primary">确认保存</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
