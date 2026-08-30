@@ -87,7 +87,7 @@ function renderAccountList() {
       </span>
       <button class="account-del" data-id="${a.id}" title="删除该账户及其记录">删除</button>
     `;
-    li.querySelector(".account-del").addEventListener("click", () => deleteAccount(a.id));
+    li.querySelector(".account-del").addEventListener("click", (e) => deleteAccount(a.id, e.currentTarget));
     ul.appendChild(li);
   });
 }
@@ -118,19 +118,60 @@ async function loadTrend() {
 
 // ---------------------------------------------------------------- 账户操作
 
-$("#btn-new-account").addEventListener("click", async () => {
-  const name = prompt("请输入账户名称（如：支付宝 / 招商银行）");
-  if (!name || !name.trim()) return;
-  await api("/api/accounts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: name.trim() }),
-  });
-  await loadAll();
+// 新增账户弹窗
+function openAccountModal() {
+  $("#account-name-input").value = "";
+  $("#account-modal-error").textContent = "";
+  $("#account-modal").classList.remove("hidden");
+  $("#account-name-input").focus();
+}
+function closeAccountModal() {
+  $("#account-modal").classList.add("hidden");
+}
+
+$("#btn-new-account").addEventListener("click", openAccountModal);
+$("#btn-account-cancel").addEventListener("click", closeAccountModal);
+$("#account-modal").addEventListener("click", (e) => {
+  if (e.target === $("#account-modal")) closeAccountModal();
+});
+$("#account-name-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("#btn-account-confirm").click();
+});
+$("#btn-account-confirm").addEventListener("click", async () => {
+  const name = $("#account-name-input").value.trim();
+  if (!name) {
+    $("#account-modal-error").textContent = "请输入账户名称";
+    return;
+  }
+  try {
+    await api("/api/accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name }),
+    });
+    closeAccountModal();
+    await loadAll();
+  } catch (err) {
+    $("#account-modal-error").textContent = err.message;
+  }
 });
 
-async function deleteAccount(id) {
-  if (!confirm("确认删除该账户及其全部记录？")) return;
+// 删除账户（两次点击确认，避免误删，也避免浏览器拦截原生确认框）
+let deletePendingId = null;
+async function deleteAccount(id, btn) {
+  if (deletePendingId !== id) {
+    deletePendingId = id;
+    btn.textContent = "确认删除?";
+    btn.classList.add("confirming");
+    setTimeout(() => {
+      if (deletePendingId === id) {
+        deletePendingId = null;
+        renderAccountList();
+      }
+    }, 5000);
+    return;
+  }
+  deletePendingId = null;
   await api("/api/accounts/" + id, { method: "DELETE" });
   await loadAll();
 }

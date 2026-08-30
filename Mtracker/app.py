@@ -17,6 +17,7 @@ DB_PATH = os.path.join(BASE_DIR, "database.db")
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 限制上传图片 16MB
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # 开发阶段禁用静态文件缓存，避免旧 JS 缓存
 
 # ---------------------------------------------------------------- 数据库
 

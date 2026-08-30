@@ -139,6 +139,11 @@ main {
   margin-left: 10px;
 }
 .account-del:hover { background: #fdecec; border-color: var(--danger); }
+.account-del.confirming {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
 
 /* 上传区 */
 .drop-zone {
@@ -179,15 +184,16 @@ main {
   max-width: 380px;
 }
 .modal-box h3 { margin: 0 0 8px; }
-.modal-box input[type="number"] {
+.modal-box input[type="number"],
+.modal-box input[type="text"] {
   width: 100%;
   padding: 12px;
-  font-size: 22px;
+  font-size: 18px;
   border: 1px solid var(--border);
   border-radius: 10px;
   margin: 12px 0;
-  text-align: center;
 }
+.modal-box input[type="number"] { font-size: 22px; text-align: center; }
 .candidates { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .candidate-chip {
   border: 1px solid var(--border);

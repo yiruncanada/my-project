@@ -68,6 +68,20 @@
   </div>
 </div>
 
+<!-- 新增账户弹窗 -->
+<div id="account-modal" class="modal hidden">
+  <div class="modal-box">
+    <h3>新增账户</h3>
+    <label class="rec-label">账户名称</label>
+    <input type="text" id="account-name-input" placeholder="如：招商银行 / 支付宝">
+    <p id="account-modal-error" class="error"></p>
+    <div class="modal-actions">
+      <button id="btn-account-cancel" class="btn">取消</button>
+      <button id="btn-account-confirm" class="btn btn-primary">创建</button>
+    </div>
+  </div>
+</div>
+
 <script src="/static/app.js"></script>
 </body>
 </html>
