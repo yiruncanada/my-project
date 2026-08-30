@@ -10,7 +10,9 @@
 - ✅ **截图识别**：拖拽 / 粘贴 / 点击三种方式上传截图，OCR 自动识别金额
 - ✅ **金额确认**：弹出轻量确认框，自动推荐识别结果，可点击候选值或手动修改
 - ✅ **总资产汇总**：卡片实时展示所有账户最新余额总和及更新时间
-- ✅ **趋势图**：原生 Canvas 折线图，展示资产随时间变化轨迹
+- ✅ **趋势图**：堆叠柱状图，按天、按账户分色展示资产变化
+- ✅ **多币种**：账户支持人民币/美元/加元等，总资产与图表自动换算为人民币
+- ✅ **手动输入**：无需截图，直接手动录入金额
 - ✅ **一键隐数**：眼睛图标一键模糊所有金额，保护隐私
 - ✅ **零成本零依赖**：OCR 完全本地运行，无需注册账号、无需联网、无需 API Key
 
@@ -49,6 +51,34 @@ python app.py
 浏览器打开 **http://127.0.0.1:5000** 即可使用。
 
 > 首次 OCR 识别会加载模型（约 2~3 秒），之后识别会很快。
+
+## 🐳 Docker 部署
+
+适用于 iStoreOS / OpenWrt / NAS / 服务器等环境。
+
+### 方式一：docker compose（推荐）
+
+```bash
+docker compose up -d --build
+```
+
+### 方式二：手动 build + run
+
+```bash
+docker build -t mtracker .
+docker run -d --name mtracker -p 5000:5000 -v mtracker-data:/data --restart unless-stopped mtracker
+```
+
+部署后浏览器打开 **http://<设备IP>:5000**。
+
+### iStoreOS / 路由器注意事项
+
+- **架构匹配**：x86_64 软路由直接构建；ARM64（R2S/R4S/R5S/N1 等）在设备上构建，或用 buildx 交叉构建：
+  ```bash
+  docker buildx build --platform linux/arm64 -t mtracker .
+  ```
+- **内存**：OCR 推理约需 300~500MB，建议设备 ≥ 1GB RAM。
+- **数据持久化**：数据库在挂载卷 `/data` 中，删容器不丢数据。
 
 ## 📖 使用流程
 
@@ -91,7 +121,7 @@ Mtracker/
 ## 🗄 数据模型
 
 ```sql
-accounts  (id, name, created_at)
+accounts  (id, name, currency, created_at)
 asset_logs(id, account_id, amount, recorded_at)
 ```
 

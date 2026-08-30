@@ -14,7 +14,7 @@ from flask import Flask, jsonify, render_template, request
 from rapidocr_onnxruntime import RapidOCR
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "database.db")
+DB_PATH = os.environ.get("DB_PATH", os.path.join(BASE_DIR, "database.db"))
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 限制上传图片 16MB
@@ -86,6 +86,9 @@ def init_db():
             "INSERT OR IGNORE INTO exchange_rates (currency, rate) VALUES (?, ?)",
             DEFAULT_RATES,
         )
+
+
+init_db()  # 导入时初始化数据库（幂等；gunicorn/Docker 部署也需要）
 
 
 def get_rates():
@@ -397,4 +400,7 @@ def api_ocr():
 
 if __name__ == "__main__":
     init_db()
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", 5000))
+    debug = os.environ.get("DEBUG", "1") != "0"
+    app.run(host=host, port=port, debug=debug)

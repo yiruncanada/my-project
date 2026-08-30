@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+database.db
+.git/
+.gitignore
+*.png
+*.jpg
+项目计划.txt
+README.md
+start.bat
