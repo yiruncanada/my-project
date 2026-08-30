@@ -60,9 +60,9 @@ def get_ocr():
 
 
 # 金额正则：可选货币符号 + 数字（可带千分位逗号）+ 可选小数
-AMOUNT_RE = re.compile(r"(?:[¥￥$€£])?\s*\d+(?:,\d{3})*(?:\.\d{1,2})?")
+AMOUNT_RE = re.compile(r"(?:[¥￥$€£])?\s*\d[\d,]*(?:\.\d{1,2})?")
 # 余额/总额等关键词，命中关键词的数字优先作为推荐值
-KEYWORDS = ["余额", "总额", "合计", "总资产", "可用", "结余", "balance", "total", "available"]
+KEYWORDS = ["余额", "总额", "合计", "总资产", "可用余额", "结余", "balance", "total", "available"]
 
 
 def extract_amounts(ocr_result):
@@ -78,6 +78,14 @@ def extract_amounts(ocr_result):
         has_keyword = any(k in text.lower() for k in KEYWORDS)
         for m in AMOUNT_RE.finditer(text):
             raw = m.group(0)
+            # 过滤百分比（数字后紧跟 %，如 4.5%）
+            if m.end() < len(text) and text[m.end()] == "%":
+                continue
+            # 过滤时间（数字前后是冒号，如 14:43）
+            prev = text[m.start() - 1] if m.start() > 0 else ""
+            nxt = text[m.end()] if m.end() < len(text) else ""
+            if prev == ":" or nxt == ":":
+                continue
             clean = re.sub(r"[^\d.\-]", "", raw)
             if not clean:
                 continue
@@ -85,23 +93,27 @@ def extract_amounts(ocr_result):
                 val = float(clean)
             except ValueError:
                 continue
+            if val <= 0:
+                continue
+            # 过滤年份（1900-2100 且无小数点）
+            if "." not in clean and 1900 <= val <= 2100:
+                continue
             candidates.append({"amount": val, "line": text, "keyword": has_keyword})
 
-    # 去重
-    seen = set()
-    unique = []
+    # 去重（关键词命中的优先保留）
+    seen = {}
     for c in candidates:
         key = round(c["amount"], 2)
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(c)
+        if key not in seen or (c["keyword"] and not seen[key]["keyword"]):
+            seen[key] = c
+    unique = list(seen.values())
 
     # 关键词命中优先，其次金额从大到小
     unique.sort(key=lambda c: (not c["keyword"], -c["amount"]))
 
-    amount_list = [c["amount"] for c in unique]
-    best_guess = unique[0]["amount"] if unique else None
+    # 最多返回 6 个候选，减少噪音
+    amount_list = [c["amount"] for c in unique][:6]
+    best_guess = amount_list[0] if amount_list else None
     return {"candidates": amount_list, "best_guess": best_guess, "lines": lines}
 
 

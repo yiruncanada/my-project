@@ -85,7 +85,7 @@ function renderAccountList() {
         <span class="account-balance amount">${fmtMoney(a.latest_amount)}</span>
         <div class="account-time">${a.updated_at ? "更新于 " + a.updated_at : "暂无记录"}</div>
       </span>
-      <button class="account-del" data-id="${a.id}" title="删除账户">🗑</button>
+      <button class="account-del" data-id="${a.id}" title="删除该账户及其记录">删除</button>
     `;
     li.querySelector(".account-del").addEventListener("click", () => deleteAccount(a.id));
     ul.appendChild(li);
@@ -214,8 +214,9 @@ function openModal(ocrData) {
   box.innerHTML = "";
   ocrData.candidates.forEach((c) => {
     const chip = document.createElement("span");
-    chip.className = "candidate-chip";
-    chip.textContent = fmtMoney(c);
+    const isBest = Math.abs(c - ocrData.best_guess) < 0.005;
+    chip.className = "candidate-chip" + (isBest ? " chip-best" : "");
+    chip.textContent = (isBest ? "推荐 " : "") + fmtMoney(c);
     chip.addEventListener("click", () => {
       $("#modal-amount").value = c;
     });
