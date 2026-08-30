@@ -2,6 +2,7 @@
 """
 个人资产管理系统（极简单用户版）
 后端：Flask + SQLite + RapidOCR
+支持多币种账户，总资产/走势图统一换算为人民币
 """
 import os
 import re
@@ -19,6 +20,32 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 限制上传图片 16MB
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # 开发阶段禁用静态文件缓存，避免旧 JS 缓存
 
+# ---------------------------------------------------------------- 币种与汇率
+
+CURRENCIES = [
+    {"code": "CNY", "name": "人民币", "symbol": "¥"},
+    {"code": "USD", "name": "美元", "symbol": "$"},
+    {"code": "CAD", "name": "加元", "symbol": "C$"},
+    {"code": "EUR", "name": "欧元", "symbol": "€"},
+    {"code": "GBP", "name": "英镑", "symbol": "£"},
+    {"code": "JPY", "name": "日元", "symbol": "JP¥"},
+    {"code": "HKD", "name": "港币", "symbol": "HK$"},
+    {"code": "AUD", "name": "澳元", "symbol": "A$"},
+]
+
+# 默认汇率：1 单位外币 = X 人民币（可在线编辑）
+DEFAULT_RATES = [
+    ("CNY", 1.0),
+    ("USD", 6.72),
+    ("CAD", 4.85),
+    ("EUR", 7.35),
+    ("GBP", 8.55),
+    ("JPY", 0.045),
+    ("HKD", 0.86),
+    ("AUD", 4.45),
+]
+
+
 # ---------------------------------------------------------------- 数据库
 
 def get_db():
@@ -34,6 +61,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS accounts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
+                currency TEXT NOT NULL DEFAULT 'CNY',
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             );
             CREATE TABLE IF NOT EXISTS asset_logs (
@@ -43,8 +71,34 @@ def init_db():
                 recorded_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
                 FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS exchange_rates (
+                currency TEXT PRIMARY KEY,
+                rate REAL NOT NULL
+            );
             """
         )
+        # 迁移：旧版 accounts 表补 currency 列
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(accounts)")]
+        if "currency" not in cols:
+            conn.execute("ALTER TABLE accounts ADD COLUMN currency TEXT NOT NULL DEFAULT 'CNY'")
+        # 种子汇率
+        conn.executemany(
+            "INSERT OR IGNORE INTO exchange_rates (currency, rate) VALUES (?, ?)",
+            DEFAULT_RATES,
+        )
+
+
+def get_rates():
+    with get_db() as conn:
+        rows = conn.execute("SELECT currency, rate FROM exchange_rates").fetchall()
+    return {r["currency"]: r["rate"] for r in rows}
+
+
+def to_cny(amount, currency, rates=None):
+    if amount is None:
+        return None
+    rates = rates or get_rates()
+    return round(amount * rates.get(currency, 1.0), 2)
 
 
 # ---------------------------------------------------------------- OCR
@@ -60,10 +114,56 @@ def get_ocr():
     return _ocr
 
 
-# 金额正则：可选货币符号 + 数字（可带千分位逗号）+ 可选小数
-AMOUNT_RE = re.compile(r"(?:[¥￥$€£])?\s*\d[\d,]*(?:\.\d{1,2})?")
+# 金额正则：可选货币符号 + 可选正负号 + 数字（含空格/逗号/点分隔符）
+AMOUNT_RE = re.compile(r"(?:[¥￥$€£])?\s*[-+]?\d[\d\s.,]*")
 # 余额/总额等关键词，命中关键词的数字优先作为推荐值
-KEYWORDS = ["余额", "总额", "合计", "总资产", "可用余额", "结余", "balance", "total", "available"]
+KEYWORDS = ["余额", "总额", "合计", "总资产", "可用余额", "结余", "balance", "total",
+            "available", "solde", "disponible"]
+
+
+def parse_money_number(s):
+    """解析金额字符串，兼容 1,234.56 / 1.234,56 / 3 278,95 / 3278.95 等格式"""
+    s = s.strip().rstrip(".,")
+    sign = 1.0
+    if s.startswith("-"):
+        sign = -1.0
+        s = s[1:]
+    elif s.startswith("+"):
+        s = s[1:]
+    s = s.replace(" ", "")
+    if not s or not any(ch.isdigit() for ch in s):
+        return None
+    if not any(c in s for c in ",."):
+        return sign * float(s) if re.fullmatch(r"\d+", s) else None
+
+    has_comma = "," in s
+    has_dot = "." in s
+    if has_comma and has_dot:
+        # 同时有两种分隔符：最后一个出现的是小数分隔符
+        pos = max(s.rfind(","), s.rfind("."))
+        dec = s[pos + 1:]
+        intp = s[:pos].replace(",", "").replace(".", "")
+    else:
+        sep = "," if has_comma else "."
+        parts = s.split(sep)
+        if all(len(p) == 3 for p in parts[1:]):
+            # 每个分组都是 3 位 → 全是千分位（如 1,234,567）
+            intp = "".join(parts)
+            dec = ""
+        else:
+            # 最后一个分隔符是小数分隔符
+            intp = "".join(parts[:-1])
+            dec = parts[-1]
+    if not intp:
+        intp = "0"
+    if not intp.isdigit():
+        return None
+    val = float(intp)
+    if dec:
+        if not dec.isdigit():
+            return None
+        val += int(dec.ljust(2, "0")[:2]) / 100.0
+    return sign * val
 
 
 def extract_amounts(ocr_result):
@@ -78,7 +178,9 @@ def extract_amounts(ocr_result):
         lines.append(text)
         has_keyword = any(k in text.lower() for k in KEYWORDS)
         for m in AMOUNT_RE.finditer(text):
-            raw = m.group(0)
+            raw = m.group(0).strip().rstrip(".,")
+            if not raw:
+                continue
             # 过滤百分比（数字后紧跟 %，如 4.5%）
             if m.end() < len(text) and text[m.end()] == "%":
                 continue
@@ -87,32 +189,36 @@ def extract_amounts(ocr_result):
             nxt = text[m.end()] if m.end() < len(text) else ""
             if prev == ":" or nxt == ":":
                 continue
-            clean = re.sub(r"[^\d.\-]", "", raw)
-            if not clean:
+            body = raw.lstrip("+-").replace(" ", "")
+            # 过滤以 0 开头的纯整数（账户号，如 08081）
+            if re.fullmatch(r"0\d+", body):
                 continue
-            try:
-                val = float(clean)
-            except ValueError:
+            # 过滤 7 位以上纯整数（账户号/ID，如 5532718）
+            if re.fullmatch(r"\d{7,}", body):
                 continue
-            if val <= 0:
+            val = parse_money_number(raw)
+            if val is None or val <= 0:
                 continue
             # 过滤年份（1900-2100 且无小数点）
-            if "." not in clean and 1900 <= val <= 2100:
+            if "." not in body and "," not in body and 1900 <= val <= 2100:
                 continue
-            candidates.append({"amount": val, "line": text, "keyword": has_keyword})
+            # 是否有小数部分（带小数更像真实金额，纯整数更像流水号/ID）
+            clean_raw = raw.replace(" ", "")
+            pos = max(clean_raw.rfind("."), clean_raw.rfind(","))
+            has_decimal = bool(pos >= 0 and 1 <= len(clean_raw[pos + 1:]) <= 2 and clean_raw[pos + 1:].isdigit())
+            candidates.append({"amount": round(val, 2), "line": text, "keyword": has_keyword, "decimal": has_decimal})
 
-    # 去重（关键词命中的优先保留）
+    # 去重（关键词命中、带小数的优先保留）
     seen = {}
     for c in candidates:
-        key = round(c["amount"], 2)
-        if key not in seen or (c["keyword"] and not seen[key]["keyword"]):
+        key = c["amount"]
+        if key not in seen or (c["keyword"], c["decimal"]) > (seen[key]["keyword"], seen[key]["decimal"]):
             seen[key] = c
     unique = list(seen.values())
 
-    # 关键词命中优先，其次金额从大到小
-    unique.sort(key=lambda c: (not c["keyword"], -c["amount"]))
+    # 排序：关键词命中 > 带小数 > 金额从大到小
+    unique.sort(key=lambda c: (not c["keyword"], not c["decimal"], -c["amount"]))
 
-    # 最多返回 6 个候选，减少噪音
     amount_list = [c["amount"] for c in unique][:6]
     best_guess = amount_list[0] if amount_list else None
     return {"candidates": amount_list, "best_guess": best_guess, "lines": lines}
@@ -125,14 +231,45 @@ def index():
     return render_template("index.html")
 
 
+# ---------------------------------------------------------------- 币种 / 汇率
+
+@app.route("/api/currencies")
+def currencies():
+    rates = get_rates()
+    return jsonify([{**c, "rate": rates.get(c["code"], 1.0)} for c in CURRENCIES])
+
+
+@app.route("/api/rates", methods=["POST"])
+def update_rate():
+    body = request.json or {}
+    currency = body.get("currency", "").strip().upper()
+    try:
+        rate = float(body.get("rate"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "汇率无效"}), 400
+    if rate <= 0:
+        return jsonify({"error": "汇率需大于 0"}), 400
+    valid = {c["code"] for c in CURRENCIES}
+    if currency not in valid:
+        return jsonify({"error": "不支持的币种"}), 400
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO exchange_rates (currency, rate) VALUES (?, ?) "
+            "ON CONFLICT(currency) DO UPDATE SET rate = excluded.rate",
+            (currency, rate),
+        )
+    return jsonify({"ok": True})
+
+
 # ---------------------------------------------------------------- 账户
 
 @app.route("/api/accounts", methods=["GET"])
 def list_accounts():
+    rates = get_rates()
     with get_db() as conn:
         rows = conn.execute(
             """
-            SELECT a.id, a.name,
+            SELECT a.id, a.name, a.currency,
                    (SELECT l.amount FROM asset_logs l
                      WHERE l.account_id = a.id
                      ORDER BY l.recorded_at DESC, l.id DESC LIMIT 1) AS latest_amount,
@@ -144,18 +281,29 @@ def list_accounts():
             ORDER BY a.id
             """
         ).fetchall()
-    return jsonify([dict(r) for r in rows])
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["amount_cny"] = to_cny(d["latest_amount"], d["currency"], rates)
+        result.append(d)
+    return jsonify(result)
 
 
 @app.route("/api/accounts", methods=["POST"])
 def create_account():
-    name = (request.json or {}).get("name", "").strip()
+    body = request.json or {}
+    name = body.get("name", "").strip()
+    currency = body.get("currency", "CNY").strip().upper()
     if not name:
         return jsonify({"error": "账户名称不能为空"}), 400
+    if currency not in {c["code"] for c in CURRENCIES}:
+        return jsonify({"error": "不支持的币种"}), 400
     with get_db() as conn:
-        cur = conn.execute("INSERT INTO accounts (name) VALUES (?)", (name,))
+        cur = conn.execute(
+            "INSERT INTO accounts (name, currency) VALUES (?, ?)", (name, currency)
+        )
         aid = cur.lastrowid
-    return jsonify({"id": aid, "name": name}), 201
+    return jsonify({"id": aid, "name": name, "currency": currency}), 201
 
 
 @app.route("/api/accounts/<int:aid>", methods=["DELETE"])
@@ -189,8 +337,9 @@ def add_log():
 
 @app.route("/api/trend")
 def trend():
+    rates = get_rates()
     with get_db() as conn:
-        accounts = conn.execute("SELECT id, name FROM accounts ORDER BY id").fetchall()
+        accounts = conn.execute("SELECT id, name, currency FROM accounts ORDER BY id").fetchall()
         logs = conn.execute(
             "SELECT account_id, amount, recorded_at FROM asset_logs ORDER BY recorded_at ASC, id ASC"
         ).fetchall()
@@ -216,9 +365,11 @@ def trend():
             latest[log["account_id"]] = log["amount"]
         day_values[day] = dict(latest)
 
+    # 换算为人民币后输出
     series = []
     for acc in accounts:
-        values = [round(day_values[d].get(acc["id"], 0.0), 2) for d in days]
+        rate = rates.get(acc["currency"], 1.0)
+        values = [round(day_values[d].get(acc["id"], 0.0) * rate, 2) for d in days]
         if any(v != 0 for v in values):
             series.append({"account_id": acc["id"], "name": acc["name"], "values": values})
 

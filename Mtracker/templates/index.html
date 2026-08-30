@@ -10,7 +10,10 @@
 
 <header class="topbar">
   <h1>💰 资产管家</h1>
-  <button id="toggle-hide" class="icon-btn" title="一键隐数">👁️</button>
+  <div class="topbar-actions">
+    <button id="btn-rates" class="btn btn-sm">💱 汇率</button>
+    <button id="toggle-hide" class="icon-btn" title="一键隐数">👁️</button>
+  </div>
 </header>
 
 <main>
@@ -75,10 +78,25 @@
     <h3>新增账户</h3>
     <label class="rec-label">账户名称</label>
     <input type="text" id="account-name-input" placeholder="如：招商银行 / 支付宝">
+    <label class="rec-label">币种</label>
+    <select id="account-currency-select" class="select"></select>
     <p id="account-modal-error" class="error"></p>
     <div class="modal-actions">
       <button id="btn-account-cancel" class="btn">取消</button>
       <button id="btn-account-confirm" class="btn btn-primary">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- 汇率设置弹窗 -->
+<div id="rates-modal" class="modal hidden">
+  <div class="modal-box">
+    <h3>汇率设置</h3>
+    <p class="hint">1 单位外币 = 多少人民币（用于总资产和走势图换算）</p>
+    <div id="rates-list"></div>
+    <p id="rates-error" class="error"></p>
+    <div class="modal-actions">
+      <button id="btn-rates-close" class="btn btn-primary">完成</button>
     </div>
   </div>
 </div>

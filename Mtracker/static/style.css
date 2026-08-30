@@ -45,6 +45,7 @@ body {
   border-radius: 8px;
 }
 .icon-btn:hover { background: var(--bg); }
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
 
 main {
   max-width: 640px;
@@ -125,7 +126,16 @@ main {
 }
 .account-item:last-child { border-bottom: none; }
 .account-name { font-weight: 500; }
+.currency-tag {
+  font-size: 11px;
+  color: var(--accent);
+  background: #eef4ff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
 .account-right { text-align: right; }
+.account-cny { color: var(--muted); font-size: 11px; }
 .account-balance { font-weight: 600; }
 .account-time { color: var(--muted); font-size: 11px; }
 .account-del {
@@ -228,6 +238,25 @@ main {
 .modal-actions { display: flex; gap: 10px; }
 .modal-actions .btn { flex: 1; }
 .error { color: var(--danger); font-size: 13px; margin: 0 0 8px; min-height: 16px; }
+
+/* 汇率设置 */
+.rate-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.rate-name { flex: 1; font-size: 14px; }
+.rate-input {
+  width: 110px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  text-align: right;
+}
+.rate-eq { color: var(--muted); font-size: 13px; }
 
 /* 一键隐数 */
 body.hide-numbers .amount,

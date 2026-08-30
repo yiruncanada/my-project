@@ -5,6 +5,7 @@ const $ = (sel) => document.querySelector(sel);
 
 // 全局状态
 let accounts = [];
+let currencies = [];
 let selectedAccountId = null;
 let pendingAmount = null; // OCR 识别结果待确认
 
@@ -13,6 +14,24 @@ let pendingAmount = null; // OCR 识别结果待确认
 function fmtMoney(n) {
   if (n === null || n === undefined) return "¥ --";
   return "¥ " + Number(n).toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function currencySymbol(code) {
+  const c = currencies.find((x) => x.code === code);
+  return c ? c.symbol : code;
+}
+
+function currencyName(code) {
+  const c = currencies.find((x) => x.code === code);
+  return c ? c.name : code;
+}
+
+function fmtMoneyByCurrency(n, code) {
+  if (n === null || n === undefined) return "--";
+  return currencySymbol(code) + " " + Number(n).toLocaleString("zh-CN", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -56,7 +75,7 @@ function renderSelect() {
 }
 
 function renderSummary() {
-  const total = accounts.reduce((s, a) => s + (a.latest_amount || 0), 0);
+  const total = accounts.reduce((s, a) => s + (a.amount_cny || 0), 0);
   $(".summary-amount").textContent = accounts.length ? fmtMoney(total) : "¥ --";
   const latest = accounts
     .map((a) => a.updated_at)
@@ -79,10 +98,13 @@ function renderAccountList() {
   accounts.forEach((a) => {
     const li = document.createElement("li");
     li.className = "account-item";
+    const cnyNote = a.currency !== "CNY" && a.latest_amount != null
+      ? `<div class="account-cny">≈ ${fmtMoney(a.amount_cny)}</div>` : "";
     li.innerHTML = `
-      <span class="account-name">${escapeHtml(a.name)}</span>
+      <span class="account-name">${escapeHtml(a.name)} <span class="currency-tag">${currencyName(a.currency)}</span></span>
       <span class="account-right">
-        <span class="account-balance amount">${fmtMoney(a.latest_amount)}</span>
+        <span class="account-balance amount">${fmtMoneyByCurrency(a.latest_amount, a.currency)}</span>
+        ${cnyNote}
         <div class="account-time">${a.updated_at ? "更新于 " + a.updated_at : "暂无记录"}</div>
       </span>
       <button class="account-del" data-id="${a.id}" title="删除该账户及其记录">删除</button>
@@ -106,7 +128,7 @@ function escapeHtml(s) {
 // ---------------------------------------------------------------- 数据加载
 
 async function loadAll() {
-  accounts = await api("/api/accounts");
+  [accounts, currencies] = await Promise.all([api("/api/accounts"), api("/api/currencies")]);
   render();
   loadTrend();
 }
@@ -121,6 +143,15 @@ async function loadTrend() {
 // 新增账户弹窗
 function openAccountModal() {
   $("#account-name-input").value = "";
+  const sel = $("#account-currency-select");
+  sel.innerHTML = "";
+  currencies.forEach((c) => {
+    const opt = document.createElement("option");
+    opt.value = c.code;
+    opt.textContent = c.symbol + " " + c.name + " (" + c.code + ")";
+    sel.appendChild(opt);
+  });
+  sel.value = "CNY";
   $("#account-modal-error").textContent = "";
   $("#account-modal").classList.remove("hidden");
   $("#account-name-input").focus();
@@ -139,6 +170,7 @@ $("#account-name-input").addEventListener("keydown", (e) => {
 });
 $("#btn-account-confirm").addEventListener("click", async () => {
   const name = $("#account-name-input").value.trim();
+  const currency = $("#account-currency-select").value;
   if (!name) {
     $("#account-modal-error").textContent = "请输入账户名称";
     return;
@@ -147,7 +179,7 @@ $("#btn-account-confirm").addEventListener("click", async () => {
     await api("/api/accounts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name }),
+      body: JSON.stringify({ name: name, currency: currency }),
     });
     closeAccountModal();
     await loadAll();
@@ -179,6 +211,53 @@ async function deleteAccount(id, btn) {
 $("#account-select").addEventListener("change", (e) => {
   selectedAccountId = e.target.value ? Number(e.target.value) : null;
   updateDropAccount();
+});
+
+// ---------------------------------------------------------------- 汇率设置
+
+function openRatesModal() {
+  const box = $("#rates-list");
+  box.innerHTML = "";
+  currencies.forEach((c) => {
+    if (c.code === "CNY") return;
+    const row = document.createElement("div");
+    row.className = "rate-row";
+    row.innerHTML = `
+      <span class="rate-name">${c.symbol} ${c.name} (${c.code})</span>
+      <input type="number" step="0.0001" min="0" class="rate-input" data-currency="${c.code}" value="${c.rate}">
+      <span class="rate-eq">= ¥</span>
+    `;
+    box.appendChild(row);
+  });
+  $("#rates-error").textContent = "";
+  $("#rates-modal").classList.remove("hidden");
+}
+
+function closeRatesModal() {
+  $("#rates-modal").classList.add("hidden");
+}
+
+$("#btn-rates").addEventListener("click", openRatesModal);
+$("#btn-rates-close").addEventListener("click", async () => {
+  const inputs = document.querySelectorAll(".rate-input");
+  for (const inp of inputs) {
+    const currency = inp.dataset.currency;
+    const rate = parseFloat(inp.value);
+    if (!rate || rate <= 0) {
+      $("#rates-error").textContent = "汇率需大于 0";
+      return;
+    }
+    await api("/api/rates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currency: currency, rate: rate }),
+    });
+  }
+  closeRatesModal();
+  await loadAll();
+});
+$("#rates-modal").addEventListener("click", (e) => {
+  if (e.target === $("#rates-modal")) closeRatesModal();
 });
 
 // ---------------------------------------------------------------- 上传识别
