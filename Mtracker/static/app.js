@@ -7,7 +7,9 @@ const $ = (sel) => document.querySelector(sel);
 let accounts = [];
 let currencies = [];
 let selectedAccountId = null;
-let pendingAmount = null; // OCR 识别结果待确认
+let pendingCandidates = [];
+let pendingBestGuess = null;
+let pendingMode = "ocr"; // "ocr" | "manual"
 
 // ---------------------------------------------------------------- 工具
 
@@ -323,22 +325,33 @@ async function handleImage(file) {
 
 // ---------------------------------------------------------------- 确认弹窗
 
-function openModal(ocrData) {
-  pendingAmount = ocrData.best_guess;
-  const acc = accounts.find((a) => a.id === selectedAccountId);
-  const cur = acc ? acc.currency : "CNY";
-  $("#modal-title").textContent = "确认识别金额";
-  $("#modal-account").textContent = acc ? `${acc.name}（${currencyName(cur)}）` : "";
-  $("#amount-label").textContent = "推荐金额（可修改）";
-  $("#candidates-label").style.display = "block";
-  $("#modal-amount").value = ocrData.best_guess != null ? ocrData.best_guess : "";
-  $("#modal-error").textContent = "";
+function populateModalAccounts() {
+  const sel = $("#modal-account-select");
+  sel.innerHTML = "";
+  accounts.forEach((a) => {
+    const opt = document.createElement("option");
+    opt.value = a.id;
+    opt.textContent = `${a.name}（${currencyName(a.currency)}）`;
+    sel.appendChild(opt);
+  });
+  if (selectedAccountId && accounts.some((a) => a.id === selectedAccountId)) {
+    sel.value = String(selectedAccountId);
+  }
+}
 
+function currentModalAccount() {
+  const id = Number($("#modal-account-select").value);
+  return accounts.find((a) => a.id === id);
+}
+
+function renderCandidates() {
   const box = $("#modal-candidates");
   box.innerHTML = "";
-  ocrData.candidates.forEach((c) => {
+  const acc = currentModalAccount();
+  const cur = acc ? acc.currency : "CNY";
+  pendingCandidates.forEach((c) => {
     const chip = document.createElement("span");
-    const isBest = Math.abs(c - ocrData.best_guess) < 0.005;
+    const isBest = Math.abs(c - pendingBestGuess) < 0.005;
     chip.className = "candidate-chip" + (isBest ? " chip-best" : "");
     chip.textContent = (isBest ? "推荐 " : "") + fmtMoneyByCurrency(c, cur);
     chip.addEventListener("click", () => {
@@ -346,36 +359,65 @@ function openModal(ocrData) {
     });
     box.appendChild(chip);
   });
+}
 
+function updateAmountLabel() {
+  const acc = currentModalAccount();
+  const cur = acc ? acc.currency : "CNY";
+  if (pendingMode === "manual") {
+    $("#amount-label").textContent = `输入金额（${currencyName(cur)}）`;
+    $("#candidates-label").style.display = "none";
+  } else {
+    $("#amount-label").textContent = "推荐金额（可修改）";
+    $("#candidates-label").style.display = "block";
+  }
+  renderCandidates();
+}
+
+function openModal(ocrData) {
+  pendingMode = "ocr";
+  pendingBestGuess = ocrData.best_guess;
+  pendingCandidates = ocrData.candidates;
+  populateModalAccounts();
+  $("#modal-title").textContent = "确认识别金额";
+  $("#modal-amount").value = ocrData.best_guess != null ? ocrData.best_guess : "";
+  $("#modal-error").textContent = "";
+  updateAmountLabel();
   $("#modal").classList.remove("hidden");
   $("#modal-amount").focus();
   $("#modal-amount").select();
 }
 
-// 手动输入金额
 function openManualModal() {
-  if (!selectedAccountId) {
-    alert("请先在下拉框中选择或新增一个账户");
+  if (!accounts.length) {
+    alert("请先新增一个账户");
     return;
   }
-  pendingAmount = null;
-  const acc = accounts.find((a) => a.id === selectedAccountId);
-  const cur = acc ? acc.currency : "CNY";
+  pendingMode = "manual";
+  pendingBestGuess = null;
+  pendingCandidates = [];
+  populateModalAccounts();
   $("#modal-title").textContent = "手动输入金额";
-  $("#modal-account").textContent = acc ? `${acc.name}（${currencyName(cur)}）` : "";
-  $("#amount-label").textContent = `输入金额（${currencyName(cur)}）`;
-  $("#candidates-label").style.display = "none";
   $("#modal-amount").value = "";
   $("#modal-error").textContent = "";
   $("#modal-candidates").innerHTML = "";
+  updateAmountLabel();
   $("#modal").classList.remove("hidden");
   $("#modal-amount").focus();
 }
 
 function closeModal() {
   $("#modal").classList.add("hidden");
-  pendingAmount = null;
+  pendingBestGuess = null;
+  pendingCandidates = [];
 }
+
+$("#modal-account-select").addEventListener("change", () => {
+  selectedAccountId = Number($("#modal-account-select").value);
+  $("#account-select").value = String(selectedAccountId);
+  updateAmountLabel();
+  updateDropAccount();
+});
 
 $("#btn-cancel").addEventListener("click", closeModal);
 $("#btn-manual").addEventListener("click", openManualModal);
@@ -389,12 +431,18 @@ $("#btn-confirm").addEventListener("click", async () => {
     $("#modal-error").textContent = "请输入有效金额";
     return;
   }
+  const accountId = Number($("#modal-account-select").value);
+  if (!accountId) {
+    $("#modal-error").textContent = "请选择账户";
+    return;
+  }
   try {
     await api("/api/logs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ account_id: selectedAccountId, amount: amount }),
+      body: JSON.stringify({ account_id: accountId, amount: amount }),
     });
+    selectedAccountId = accountId;
     closeModal();
     await loadAll();
   } catch (err) {
