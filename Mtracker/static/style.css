@@ -167,6 +167,7 @@ main {
 }
 .drop-zone.dragover { border-color: var(--accent); background: #f0f5ff; }
 .drop-zone p { margin: 4px 0; }
+.btn-manual { width: 100%; margin-top: 10px; }
 .hint { color: var(--muted); font-size: 12px; }
 .accent { color: var(--accent); font-weight: 600; }
 

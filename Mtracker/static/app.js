@@ -326,7 +326,11 @@ async function handleImage(file) {
 function openModal(ocrData) {
   pendingAmount = ocrData.best_guess;
   const acc = accounts.find((a) => a.id === selectedAccountId);
-  $("#modal-account").textContent = acc ? acc.name : "";
+  const cur = acc ? acc.currency : "CNY";
+  $("#modal-title").textContent = "确认识别金额";
+  $("#modal-account").textContent = acc ? `${acc.name}（${currencyName(cur)}）` : "";
+  $("#amount-label").textContent = "推荐金额（可修改）";
+  $("#candidates-label").style.display = "block";
   $("#modal-amount").value = ocrData.best_guess != null ? ocrData.best_guess : "";
   $("#modal-error").textContent = "";
 
@@ -336,7 +340,7 @@ function openModal(ocrData) {
     const chip = document.createElement("span");
     const isBest = Math.abs(c - ocrData.best_guess) < 0.005;
     chip.className = "candidate-chip" + (isBest ? " chip-best" : "");
-    chip.textContent = (isBest ? "推荐 " : "") + fmtMoney(c);
+    chip.textContent = (isBest ? "推荐 " : "") + fmtMoneyByCurrency(c, cur);
     chip.addEventListener("click", () => {
       $("#modal-amount").value = c;
     });
@@ -348,12 +352,33 @@ function openModal(ocrData) {
   $("#modal-amount").select();
 }
 
+// 手动输入金额
+function openManualModal() {
+  if (!selectedAccountId) {
+    alert("请先在下拉框中选择或新增一个账户");
+    return;
+  }
+  pendingAmount = null;
+  const acc = accounts.find((a) => a.id === selectedAccountId);
+  const cur = acc ? acc.currency : "CNY";
+  $("#modal-title").textContent = "手动输入金额";
+  $("#modal-account").textContent = acc ? `${acc.name}（${currencyName(cur)}）` : "";
+  $("#amount-label").textContent = `输入金额（${currencyName(cur)}）`;
+  $("#candidates-label").style.display = "none";
+  $("#modal-amount").value = "";
+  $("#modal-error").textContent = "";
+  $("#modal-candidates").innerHTML = "";
+  $("#modal").classList.remove("hidden");
+  $("#modal-amount").focus();
+}
+
 function closeModal() {
   $("#modal").classList.add("hidden");
   pendingAmount = null;
 }
 
 $("#btn-cancel").addEventListener("click", closeModal);
+$("#btn-manual").addEventListener("click", openManualModal);
 $("#modal").addEventListener("click", (e) => {
   if (e.target === $("#modal")) closeModal();
 });

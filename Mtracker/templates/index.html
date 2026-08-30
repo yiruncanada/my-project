@@ -36,14 +36,15 @@
     <ul id="account-list" class="account-list"></ul>
   </section>
 
-  <!-- 上传识别区 -->
+  <!-- 记录资产区 -->
   <section class="card">
-    <div class="section-head"><h2>上传截图识别</h2></div>
+    <div class="section-head"><h2>记录资产</h2></div>
     <div id="drop-zone" class="drop-zone">
       <p>📷 拖拽 / 粘贴 / 点击选择截图</p>
       <p class="hint">识别账户：<span id="drop-account" class="accent">未选择</span></p>
       <input type="file" id="file-input" accept="image/*" hidden>
     </div>
+    <button id="btn-manual" class="btn btn-manual">✏️ 手动输入金额</button>
   </section>
 
   <!-- 趋势图 -->
@@ -58,11 +59,11 @@
 <!-- 识别确认弹窗 -->
 <div id="modal" class="modal hidden">
   <div class="modal-box">
-    <h3>确认识别金额</h3>
+    <h3 id="modal-title">确认识别金额</h3>
     <p class="hint">保存到账户：<span id="modal-account" class="accent"></span></p>
-    <label class="rec-label">推荐金额（可修改）</label>
+    <label class="rec-label" id="amount-label">推荐金额（可修改）</label>
     <input type="number" id="modal-amount" step="0.01" min="0" placeholder="输入金额">
-    <div class="candidates-label">其他识别到的数字：</div>
+    <div class="candidates-label" id="candidates-label">其他识别到的数字：</div>
     <div id="modal-candidates" class="candidates"></div>
     <p id="modal-error" class="error"></p>
     <div class="modal-actions">
