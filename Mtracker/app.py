@@ -190,21 +190,39 @@ def add_log():
 @app.route("/api/trend")
 def trend():
     with get_db() as conn:
-        rows = conn.execute(
-            """
-            SELECT l.account_id, l.amount, l.recorded_at
-            FROM asset_logs l
-            JOIN accounts a ON a.id = l.account_id
-            ORDER BY l.recorded_at ASC, l.id ASC
-            """
+        accounts = conn.execute("SELECT id, name FROM accounts ORDER BY id").fetchall()
+        logs = conn.execute(
+            "SELECT account_id, amount, recorded_at FROM asset_logs ORDER BY recorded_at ASC, id ASC"
         ).fetchall()
+
+    if not logs:
+        return jsonify({"days": [], "series": []})
+
+    # 按天分组（保持时间顺序）
+    days = []
+    logs_by_day = {}
+    for log in logs:
+        d = log["recorded_at"][:10]  # YYYY-MM-DD
+        if d not in logs_by_day:
+            days.append(d)
+            logs_by_day[d] = []
+        logs_by_day[d].append(log)
+
+    # 逐天向前填充：当天某账户未更新则沿用最近一次值
     latest = {}
-    timeline = []
-    for r in rows:
-        latest[r["account_id"]] = r["amount"]
-        total = round(sum(latest.values()), 2)
-        timeline.append({"time": r["recorded_at"], "total": total})
-    return jsonify(timeline)
+    day_values = {}
+    for day in days:
+        for log in logs_by_day[day]:
+            latest[log["account_id"]] = log["amount"]
+        day_values[day] = dict(latest)
+
+    series = []
+    for acc in accounts:
+        values = [round(day_values[d].get(acc["id"], 0.0), 2) for d in days]
+        if any(v != 0 for v in values):
+            series.append({"account_id": acc["id"], "name": acc["name"], "values": values})
+
+    return jsonify({"days": days, "series": series})
 
 
 # ---------------------------------------------------------------- OCR 识别

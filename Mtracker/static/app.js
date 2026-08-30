@@ -306,78 +306,110 @@ $("#toggle-hide").addEventListener("click", () => {
 
 // ---------------------------------------------------------------- 趋势图（原生 canvas）
 
+// 账户颜色盘
+const PALETTE = ["#2f6fed", "#f5a623", "#34c759", "#ff3b30", "#af52de", "#00c7be", "#ff9500", "#5856d6"];
+
+function niceCeil(v) {
+  if (v <= 0) return 1;
+  const exp = Math.floor(Math.log10(v));
+  const base = Math.pow(10, exp);
+  const frac = v / base;
+  const nice = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
+  return nice * base;
+}
+
+function fmtAxis(v) {
+  if (v >= 10000) {
+    const w = v / 10000;
+    return (w >= 100 ? Math.round(w) : Math.round(w * 10) / 10) + "万";
+  }
+  return String(Math.round(v));
+}
+
 function drawTrend(data) {
   const canvas = $("#trend-canvas");
   const empty = $("#trend-empty");
-  if (!data || data.length < 2) {
+  const legendBox = $("#trend-legend");
+  const days = data.days || [];
+  const series = data.series || [];
+  if (!days.length || !series.length) {
     canvas.style.display = "none";
+    legendBox.style.display = "none";
     empty.style.display = "block";
-    empty.textContent = data && data.length === 1 ? "仅 1 条记录，再记录一次即可显示走势" : "暂无记录";
+    empty.textContent = "暂无记录";
     return;
   }
   canvas.style.display = "block";
+  legendBox.style.display = "flex";
   empty.style.display = "none";
+
+  // 每个账户分配颜色
+  series.forEach((s, i) => { s.color = PALETTE[i % PALETTE.length]; });
+
+  const n = days.length;
+  const dayTotals = days.map((_, i) => series.reduce((sum, s) => sum + (s.values[i] || 0), 0));
+  const yMax = niceCeil(Math.max(...dayTotals));
 
   const ctx = canvas.getContext("2d");
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth || canvas.parentElement.clientWidth - 36;
-  const h = 220;
+  const h = 240;
   canvas.width = w * dpr;
   canvas.height = h * dpr;
   ctx.scale(dpr, dpr);
-
-  const pad = { l: 50, r: 12, t: 12, b: 28 };
-  const totals = data.map((d) => d.total);
-  const max = Math.max(...totals);
-  const min = Math.min(...totals);
-  const range = max - min || 1;
-
-  const px = (i) => pad.l + (i / (data.length - 1)) * (w - pad.l - pad.r);
-  const py = (v) => pad.t + (1 - (v - min) / range) * (h - pad.t - pad.b);
-
   ctx.clearRect(0, 0, w, h);
+
+  const pad = { l: 56, r: 12, t: 14, b: 30 };
+  const plotW = w - pad.l - pad.r;
+  const plotH = h - pad.t - pad.b;
+  const slot = plotW / n;
+  const barW = Math.min(slot * 0.6, 46);
+  const py = (v) => pad.t + plotH * (1 - v / yMax);
+
+  // Y 轴网格 + 刻度
   ctx.font = "11px sans-serif";
   ctx.textBaseline = "middle";
-
-  // 网格 + Y 轴刻度
   ctx.strokeStyle = "#e6e8ee";
   ctx.fillStyle = "#8a919f";
   for (let g = 0; g <= 4; g++) {
-    const v = min + (range * g) / 4;
+    const v = (yMax * g) / 4;
     const y = py(v);
-    ctx.beginPath();
-    ctx.moveTo(pad.l, y);
-    ctx.lineTo(w - pad.r, y);
-    ctx.stroke();
-    ctx.fillText(fmtMoney(v).replace("¥ ", ""), 6, y);
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+    ctx.textAlign = "right";
+    ctx.fillText(fmtAxis(v), pad.l - 6, y);
   }
 
-  // 折线
-  ctx.strokeStyle = "#2f6fed";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  data.forEach((d, i) => {
-    i === 0 ? ctx.moveTo(px(i), py(d.total)) : ctx.lineTo(px(i), py(d.total));
-  });
-  ctx.stroke();
+  // 堆叠柱状图
+  for (let i = 0; i < n; i++) {
+    const x = pad.l + slot * i + (slot - barW) / 2;
+    let top = py(0);
+    for (const s of series) {
+      const v = s.values[i] || 0;
+      if (v <= 0) continue;
+      const bottom = py(v);
+      ctx.fillStyle = s.color;
+      ctx.fillRect(x, bottom, barW, top - bottom);
+      top = bottom;
+    }
+  }
 
-  // 数据点
-  data.forEach((d, i) => {
-    ctx.fillStyle = "#2f6fed";
-    ctx.beginPath();
-    ctx.arc(px(i), py(d.total), 3, 0, Math.PI * 2);
-    ctx.fill();
-  });
-
-  // X 轴首尾时间
+  // X 轴日期标签（过多时抽稀）
   ctx.fillStyle = "#8a919f";
-  const t0 = data[0].time.slice(5, 16);
-  const t1 = data[data.length - 1].time.slice(5, 16);
-  ctx.textAlign = "left";
-  ctx.fillText(t0, pad.l, h - pad.b + 14);
-  ctx.textAlign = "right";
-  ctx.fillText(t1, w - pad.r, h - pad.b + 14);
+  ctx.textAlign = "center";
+  const step = Math.max(1, Math.ceil(n / 8));
+  for (let i = 0; i < n; i += step) {
+    ctx.fillText(days[i].slice(5), pad.l + slot * i + slot / 2, h - pad.b + 14);
+  }
   ctx.textAlign = "start";
+
+  // 图例
+  legendBox.innerHTML = "";
+  series.forEach((s) => {
+    const item = document.createElement("span");
+    item.className = "legend-item";
+    item.innerHTML = `<span class="legend-dot" style="background:${s.color}"></span>${escapeHtml(s.name)}`;
+    legendBox.appendChild(item);
+  });
 }
 
 window.addEventListener("resize", () => loadTrend());

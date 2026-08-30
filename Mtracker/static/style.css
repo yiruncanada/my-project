@@ -163,6 +163,9 @@ main {
 /* 趋势图 */
 #trend-canvas { width: 100%; display: block; }
 #trend-empty { text-align: center; }
+.legend { display: none; flex-wrap: wrap; gap: 12px; margin-top: 10px; }
+.legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 
 /* 弹窗 */
 .modal {
